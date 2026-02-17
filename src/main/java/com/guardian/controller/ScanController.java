@@ -9,7 +9,6 @@ import com.guardian.engine.*;
 import java.util.*;
 
 @RestController
-@RequestMapping("/api/scan")
 public class ScanController {
 
     @Autowired StaticAnalysisService staticService;
@@ -17,16 +16,18 @@ public class ScanController {
     @Autowired ContextService contextService;
     @Autowired DecisionEngine decisionEngine;
 
-    @PostMapping
-    public ScanResponse scan(@RequestBody ScanRequest req) {
+    @GetMapping("/")
+    public String home() {
+        return "Guardian Backend is running.";
+    }
 
+    @PostMapping("/api/scan")
+    public ScanResponse scan(@RequestBody ScanRequest req) {
         List<String> reasons = new ArrayList<>();
         int score = 0;
-
         score += staticService.analyze(req.value, reasons);
         score += mlService.analyzeText(req.value, reasons);
         score += contextService.analyze(req.source, req.time);
-
         String verdict = decisionEngine.decide(score);
         return new ScanResponse(verdict, score, reasons);
     }

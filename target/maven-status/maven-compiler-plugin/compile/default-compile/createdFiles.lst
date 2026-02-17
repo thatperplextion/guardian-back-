@@ -1,0 +1,8 @@
+com\guardian\service\ContextService.class
+com\guardian\controller\ScanController.class
+com\guardian\service\StaticAnalysisService.class
+com\guardian\GuardianApplication.class
+com\guardian\service\MLService.class
+com\guardian\model\ScanResponse.class
+com\guardian\engine\DecisionEngine.class
+com\guardian\model\ScanRequest.class
