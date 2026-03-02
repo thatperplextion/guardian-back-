@@ -6,9 +6,12 @@ import com.guardian.model.*;
 import com.guardian.service.*;
 import com.guardian.engine.*;
 
+
 import java.util.*;
 
+@CrossOrigin(origins = "*")
 @RestController
+@RequestMapping("/api/scan")
 public class ScanController {
 
     @Autowired StaticAnalysisService staticService;
