@@ -1,4 +1,5 @@
 com\guardian\service\ContextService.class
+com\guardian\controller\HealthController.class
 com\guardian\controller\ScanController.class
 com\guardian\service\StaticAnalysisService.class
 com\guardian\GuardianApplication.class
