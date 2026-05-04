@@ -25,7 +25,12 @@ public class ScanController {
 
     @PostMapping("/")
     public ScanResponse scan(@RequestBody ScanRequest req) {
-        String url = req != null && req.value != null ? req.value.toLowerCase() : "";
+        String raw = "";
+        if (req != null) {
+            if (req.value != null && !req.value.isEmpty()) raw = req.value;
+            else if (req.url != null && !req.url.isEmpty()) raw = req.url;
+        }
+        String url = raw.toLowerCase();
         List<String> reasons = new ArrayList<>();
         int score = 0;
 
