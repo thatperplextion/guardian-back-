@@ -23,14 +23,35 @@ public class ScanController {
         return "Guardian Backend is running.";
     }
 
-    @PostMapping("/api/scan")
+    @PostMapping("/")
     public ScanResponse scan(@RequestBody ScanRequest req) {
+        String url = req != null && req.value != null ? req.value.toLowerCase() : "";
         List<String> reasons = new ArrayList<>();
         int score = 0;
-        score += staticService.analyze(req.value, reasons);
-        score += mlService.analyzeText(req.value, reasons);
-        score += contextService.analyze(req.source, req.time);
-        String verdict = decisionEngine.decide(score);
+
+        // Demo scoring rules (tunable for production)
+        if (url.contains("bit.ly") || url.contains("bitly")) {
+            score += 50;
+            reasons.add("Detected shortened URL");
+        }
+        if (url.contains("verify")) {
+            score += 30;
+            reasons.add("Contains 'verify'");
+        }
+        if (url.contains("login")) {
+            score += 30;
+            reasons.add("Contains 'login'");
+        }
+        if (url.contains("urgent")) {
+            score += 20;
+            reasons.add("Contains 'urgent'");
+        }
+
+        String verdict;
+        if (score >= 60) verdict = "SCAM";
+        else if (score >= 30) verdict = "SUSPICIOUS";
+        else verdict = "SAFE";
+
         return new ScanResponse(verdict, score, reasons);
     }
 }
