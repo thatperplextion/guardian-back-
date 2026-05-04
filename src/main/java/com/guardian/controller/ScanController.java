@@ -25,7 +25,15 @@ public class ScanController {
 
     @PostMapping("/")
     public ScanResponse scan(@RequestBody ScanRequest request) {
-        String url = request.getValue().toLowerCase();
+        String raw = "";
+        if (request != null) {
+            if (request.getValue() != null && !request.getValue().isEmpty()) {
+                raw = request.getValue();
+            } else if (request.url != null && !request.url.isEmpty()) {
+                raw = request.url;
+            }
+        }
+        String url = raw.toLowerCase();
         int score = 0;
 
         if (url.contains("bit.ly")) score += 50;
