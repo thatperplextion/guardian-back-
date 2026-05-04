@@ -6,4 +6,8 @@ public class ScanRequest {
     public String url;
     public String contentType;
     public String time;
+
+    public String getValue() {
+        return value;
+    }
 }

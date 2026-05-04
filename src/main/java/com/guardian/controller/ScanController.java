@@ -24,39 +24,25 @@ public class ScanController {
     }
 
     @PostMapping("/")
-    public ScanResponse scan(@RequestBody ScanRequest req) {
-        String raw = "";
-        if (req != null) {
-            if (req.value != null && !req.value.isEmpty()) raw = req.value;
-            else if (req.url != null && !req.url.isEmpty()) raw = req.url;
-        }
-        String url = raw.toLowerCase();
-        List<String> reasons = new ArrayList<>();
+    public ScanResponse scan(@RequestBody ScanRequest request) {
+        String url = request.getValue().toLowerCase();
         int score = 0;
 
-        // Demo scoring rules (tunable for production)
-        if (url.contains("bit.ly") || url.contains("bitly")) {
-            score += 50;
-            reasons.add("Detected shortened URL");
-        }
-        if (url.contains("verify")) {
-            score += 30;
-            reasons.add("Contains 'verify'");
-        }
-        if (url.contains("login")) {
-            score += 30;
-            reasons.add("Contains 'login'");
-        }
-        if (url.contains("urgent")) {
-            score += 20;
-            reasons.add("Contains 'urgent'");
-        }
+        if (url.contains("bit.ly")) score += 50;
+        if (url.contains("verify")) score += 30;
+        if (url.contains("login")) score += 30;
+        if (url.contains("urgent")) score += 20;
+        if (url.startsWith("http://")) score += 20;
 
         String verdict;
         if (score >= 60) verdict = "SCAM";
         else if (score >= 30) verdict = "SUSPICIOUS";
         else verdict = "SAFE";
 
-        return new ScanResponse(verdict, score, reasons);
+        return new ScanResponse(
+            verdict,
+            score,
+            List.of("Rule-based detection triggered")
+        );
     }
 }
