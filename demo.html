@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<body style="background:#1a1a1a; color:white; font-family:Arial; padding:20px;">
+
+<style>
+  .demo-link {
+    display: inline-block;
+    font-size: 20px;
+    margin: 10px 20px 10px 0;
+    font-weight: bold;
+    cursor: pointer;
+    text-decoration: underline;
+    color: #d1d5db;
+    position: relative;
+  }
+
+  .demo-link .verdict-badge {
+    display: none;
+    margin-left: 10px;
+    padding: 6px 14px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: bold;
+    color: white;
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+
+  .demo-link.show-safe .verdict-badge {
+    display: inline-block;
+    background: #16a34a;
+  }
+
+  .demo-link.show-suspicious .verdict-badge {
+    display: inline-block;
+    background: #f59e0b;
+  }
+
+  .demo-link.show-scam .verdict-badge {
+    display: inline-block;
+    background: #ef4444;
+  }
+</style>
+
+<script>
+function verdictClass(verdict) {
+  if (verdict === "SAFE") return "show-safe";
+  if (verdict === "SUSPICIOUS") return "show-suspicious";
+  return "show-scam";
+}
+
+function verdictLabel(verdict) {
+  if (verdict === "SAFE") return "SAFE";
+  if (verdict === "SUSPICIOUS") return "SUS";
+  return "NOT SAFE";
+}
+
+async function handleHover(link) {
+  const url = link.dataset.url || link.href;
+  let badge = link.querySelector(".verdict-badge");
+
+  if (!badge) {
+    badge = document.createElement("span");
+    badge.className = "verdict-badge";
+    badge.textContent = "...";
+    link.appendChild(badge);
+  }
+
+  fetch("https://guardian-back.onrender.com/api/scan/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value: url })
+  })
+  .then(r => r.json())
+  .then(data => {
+    const verdict = verdictLabel(data.verdict);
+    badge.textContent = verdict;
+    link.classList.remove("show-safe", "show-suspicious", "show-scam");
+    link.classList.add(verdictClass(data.verdict));
+  })
+  .catch(() => {
+    badge.textContent = "NOT SAFE";
+    link.classList.remove("show-safe", "show-suspicious", "show-scam");
+    link.classList.add("show-scam");
+  });
+}
+
+document.addEventListener("mouseover", (event) => {
+  const link = event.target.closest("a.demo-link");
+  if (!link) return;
+  handleHover(link);
+});
+
+document.addEventListener("mouseout", (event) => {
+  const link = event.target.closest("a.demo-link");
+  if (!link) return;
+  const related = event.relatedTarget;
+  if (related && link.contains(related)) return;
+  link.classList.remove("show-safe", "show-suspicious", "show-scam");
+});
+</script>
+
+</body>
+</html>
