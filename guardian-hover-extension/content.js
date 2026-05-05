@@ -4,24 +4,6 @@
   /** @type {Map<string, { verdict: string, riskScore?: number }>} */
   const cache = new Map();
 
-  const tooltip = document.createElement("div");
-  tooltip.id = "guardian-hover-tooltip";
-  tooltip.style.position = "fixed";
-  tooltip.style.zIndex = "2147483647";
-  tooltip.style.pointerEvents = "none";
-  tooltip.style.display = "none";
-  tooltip.style.padding = "6px 12px";
-  tooltip.style.borderRadius = "6px";
-  tooltip.style.fontFamily = "Arial, sans-serif";
-  tooltip.style.fontSize = "12px";
-  tooltip.style.fontWeight = "800";
-  tooltip.style.color = "#fff";
-  tooltip.style.boxShadow = "0 6px 18px rgba(0,0,0,0.25)";
-  tooltip.style.maxWidth = "220px";
-  tooltip.style.whiteSpace = "nowrap";
-  tooltip.style.userSelect = "none";
-  document.documentElement.appendChild(tooltip);
-
   function normalizeVerdict(raw) {
     if (raw === "SAFE") return { label: "SAFE", bg: "#16a34a" };
     if (raw === "SUSPICIOUS") return { label: "SUS", bg: "#f59e0b" };
@@ -37,44 +19,59 @@
     }
   }
 
-  function setTooltip(text, bg) {
-    tooltip.textContent = text;
-    tooltip.style.background = bg;
-  }
-
-  let lastMouseX = 0;
-  let lastMouseY = 0;
-  document.addEventListener(
-    "mousemove",
-    (e) => {
-      lastMouseX = e.clientX;
-      lastMouseY = e.clientY;
-      if (tooltip.style.display !== "none") {
-        const offsetX = 14;
-        const offsetY = 14;
-        tooltip.style.left = `${Math.min(window.innerWidth - 10, lastMouseX + offsetX)}px`;
-        tooltip.style.top = `${Math.min(window.innerHeight - 10, lastMouseY + offsetY)}px`;
-      }
-    },
-    { passive: true }
-  );
-
   /** @type {AbortController | null} */
   let inFlight = null;
-  let currentHref = "";
+  /** @type {HTMLAnchorElement | null} */
+  let activeLink = null;
+  /** @type {HTMLSpanElement | null} */
+  let activeBadge = null;
 
-  function showLoading() {
-    setTooltip("CHECKING…", "#64748b");
-    tooltip.style.display = "block";
-  }
-
-  function hideTooltip() {
-    tooltip.style.display = "none";
-    currentHref = "";
+  function removeActiveBadge() {
+    if (activeBadge && activeBadge.parentNode) {
+      activeBadge.parentNode.removeChild(activeBadge);
+    }
+    activeBadge = null;
+    activeLink = null;
     if (inFlight) {
       inFlight.abort();
       inFlight = null;
     }
+  }
+
+  function ensureBadge(link) {
+    // Remove any previous badge from other link.
+    if (activeLink && activeLink !== link) removeActiveBadge();
+
+    const existing = link.querySelector("span[data-guardian-badge='1']");
+    if (existing) {
+      activeLink = link;
+      activeBadge = /** @type {HTMLSpanElement} */ (existing);
+      return existing;
+    }
+
+    const badge = document.createElement("span");
+    badge.setAttribute("data-guardian-badge", "1");
+    badge.textContent = "CHECKING…";
+    badge.style.display = "inline-block";
+    badge.style.marginLeft = "8px";
+    badge.style.padding = "3px 10px";
+    badge.style.borderRadius = "6px";
+    badge.style.fontFamily = "Arial, sans-serif";
+    badge.style.fontSize = "12px";
+    badge.style.fontWeight = "800";
+    badge.style.color = "#fff";
+    badge.style.background = "#64748b";
+    badge.style.verticalAlign = "middle";
+    badge.style.whiteSpace = "nowrap";
+    badge.style.userSelect = "none";
+    // Keep it visible even if the site has weird CSS.
+    badge.style.lineHeight = "20px";
+    badge.style.minHeight = "20px";
+
+    link.appendChild(badge);
+    activeLink = link;
+    activeBadge = badge;
+    return badge;
   }
 
   async function fetchVerdict(href) {
@@ -114,19 +111,16 @@
 
       if (!isHttpUrl(absoluteHref)) return;
 
-      // Avoid re-request spam when moving inside the same anchor.
-      if (absoluteHref === currentHref) return;
-      currentHref = absoluteHref;
-
-      showLoading();
+      const badge = ensureBadge(a);
 
       try {
         const result = await fetchVerdict(absoluteHref);
         const v = normalizeVerdict(result.verdict);
-        const score = typeof result.riskScore === "number" ? ` (${result.riskScore})` : "";
-        setTooltip(`${v.label}${score}`, v.bg);
+        badge.textContent = v.label;
+        badge.style.background = v.bg;
       } catch {
-        setTooltip("ERROR", "#ef4444");
+        badge.textContent = "ERROR";
+        badge.style.background = "#ef4444";
       }
     },
     true
@@ -140,7 +134,7 @@
 
       const related = e.relatedTarget;
       if (related && a.contains(related)) return;
-      hideTooltip();
+      removeActiveBadge();
     },
     true
   );
