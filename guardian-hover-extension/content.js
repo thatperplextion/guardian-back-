@@ -1,141 +1,164 @@
-(() => {
-  const API_URL = "https://guardian-back.onrender.com/api/scan/";
+/***********************
+ * Guardian Content Script
+ * FINAL STABLE VERSION
+ ***********************/
 
-  /** @type {Map<string, { verdict: string, riskScore?: number }>} */
-  const cache = new Map();
+const guardianCache = new Map();
 
-  function normalizeVerdict(raw) {
-    if (raw === "SAFE") return { label: "SAFE", bg: "#16a34a" };
-    if (raw === "SUSPICIOUS") return { label: "SUS", bg: "#f59e0b" };
-    return { label: "NOT SAFE", bg: "#ef4444" };
+/* ---------- SAFE MESSAGE SENDER ---------- */
+function safeSendMessage(payload, callback) {
+  try {
+    if (
+      typeof chrome === "undefined" ||
+      !chrome.runtime ||
+      typeof chrome.runtime.sendMessage !== "function"
+    ) {
+      return;
+    }
+    chrome.runtime.sendMessage(payload, callback);
+  } catch (e) {
+    // Extension context invalidated (normal during reloads)
+  }
+}
+
+/* ---------- TOOLTIP ---------- */
+let tooltip = null;
+
+function showTooltip(text, color, x, y) {
+  if (!tooltip) {
+    tooltip = document.createElement("div");
+    tooltip.style.position = "fixed";
+    tooltip.style.padding = "6px 10px";
+    tooltip.style.borderRadius = "6px";
+    tooltip.style.fontSize = "12px";
+    tooltip.style.fontFamily = "Arial, sans-serif";
+    tooltip.style.color = "white";
+    tooltip.style.zIndex = "999999";
+    tooltip.style.pointerEvents = "none";
+    document.body.appendChild(tooltip);
   }
 
-  function isHttpUrl(href) {
-    try {
-      const u = new URL(href, location.href);
-      return u.protocol === "http:" || u.protocol === "https:";
-    } catch {
-      return false;
-    }
+  tooltip.textContent = text;
+  tooltip.style.background = color;
+  tooltip.style.left = x + 10 + "px";
+  tooltip.style.top = y + 10 + "px";
+  tooltip.style.display = "block";
+}
+
+function hideTooltip() {
+  if (tooltip) tooltip.style.display = "none";
+}
+
+/* ---------- BADGES ---------- */
+function upsertBadge(link, verdict) {
+  const existing = link.querySelector(":scope > .guardian-badge");
+  const badge = existing || document.createElement("span");
+
+  badge.className = "guardian-badge";
+  badge.style.marginLeft = "6px";
+  badge.style.fontSize = "11px";
+  badge.style.padding = "2px 6px";
+  badge.style.borderRadius = "9999px";
+  badge.style.color = "white";
+  badge.style.fontWeight = "bold";
+  badge.style.verticalAlign = "middle";
+
+  if (verdict === "SCAM") {
+    badge.textContent = "NOT SAFE";
+    badge.style.background = "#b91c1c";
+  } else if (verdict === "SUSPICIOUS") {
+    badge.textContent = "SUS";
+    badge.style.background = "#ca8a04";
+  } else if (verdict === "SAFE") {
+    badge.textContent = "SAFE";
+    badge.style.background = "#15803d";
+  } else {
+    // ERROR or any unexpected response
+    badge.textContent = "ERR";
+    badge.style.background = "#6b7280";
   }
 
-  /** @type {AbortController | null} */
-  let inFlight = null;
-  /** @type {HTMLAnchorElement | null} */
-  let activeLink = null;
-  /** @type {HTMLSpanElement | null} */
-  let activeBadge = null;
-
-  function removeActiveBadge() {
-    if (activeBadge && activeBadge.parentNode) {
-      activeBadge.parentNode.removeChild(activeBadge);
-    }
-    activeBadge = null;
-    activeLink = null;
-    if (inFlight) {
-      inFlight.abort();
-      inFlight = null;
-    }
-  }
-
-  function ensureBadge(link) {
-    // Remove any previous badge from other link.
-    if (activeLink && activeLink !== link) removeActiveBadge();
-
-    const existing = link.querySelector("span[data-guardian-badge='1']");
-    if (existing) {
-      activeLink = link;
-      activeBadge = /** @type {HTMLSpanElement} */ (existing);
-      return existing;
-    }
-
-    const badge = document.createElement("span");
-    badge.setAttribute("data-guardian-badge", "1");
-    badge.textContent = "CHECKING…";
-    badge.style.display = "inline-block";
-    badge.style.marginLeft = "8px";
-    badge.style.padding = "3px 10px";
-    badge.style.borderRadius = "6px";
-    badge.style.fontFamily = "Arial, sans-serif";
-    badge.style.fontSize = "12px";
-    badge.style.fontWeight = "800";
-    badge.style.color = "#fff";
-    badge.style.background = "#64748b";
-    badge.style.verticalAlign = "middle";
-    badge.style.whiteSpace = "nowrap";
-    badge.style.userSelect = "none";
-    // Keep it visible even if the site has weird CSS.
-    badge.style.lineHeight = "20px";
-    badge.style.minHeight = "20px";
-
+  if (!existing) {
     link.appendChild(badge);
-    activeLink = link;
-    activeBadge = badge;
-    return badge;
+  }
+}
+
+/* ---------- HOVER SCAN ---------- */
+document.addEventListener("mouseover", function (e) {
+  const link = e.target.closest("a");
+  if (!link || !link.href || !link.href.startsWith("http")) return;
+
+  const url = link.href;
+
+  if (guardianCache.has(url)) {
+    const verdict = guardianCache.get(url);
+    showTooltip(
+      verdict,
+      verdict === "SCAM"
+        ? "#b91c1c"
+        : verdict === "SUSPICIOUS"
+        ? "#ca8a04"
+        : "#15803d",
+      e.clientX,
+      e.clientY
+    );
+    upsertBadge(link, verdict);
+    return;
   }
 
-  async function fetchVerdict(href) {
-    if (cache.has(href)) return cache.get(href);
+  safeSendMessage({ url }, (response) => {
+    if (!response || !response.verdict) return;
 
-    inFlight = new AbortController();
+    // Don't cache ERROR responses; allow retry on next hover.
+    if (response.verdict === "SAFE" || response.verdict === "SUSPICIOUS" || response.verdict === "SCAM") {
+      guardianCache.set(url, response.verdict);
+    }
 
-    const res = await fetch(API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ value: href }),
-      signal: inFlight.signal
-    });
+    upsertBadge(link, response.verdict);
 
-    const data = await res.json();
-    const result = { verdict: data?.verdict || "SAFE", riskScore: data?.riskScore };
-    cache.set(href, result);
-    return result;
-  }
+    showTooltip(
+      response.verdict,
+      response.verdict === "SCAM"
+        ? "#b91c1c"
+        : response.verdict === "SUSPICIOUS"
+        ? "#ca8a04"
+        : response.verdict === "SAFE"
+        ? "#15803d"
+        : "#6b7280",
+      e.clientX,
+      e.clientY
+    );
+  });
+});
 
-  document.addEventListener(
-    "mouseover",
-    async (e) => {
-      const a = e.target && e.target.closest ? e.target.closest("a") : null;
-      if (!a) return;
+document.addEventListener("mouseout", hideTooltip);
 
-      const href = a.getAttribute("href") || "";
-      if (!href || href.startsWith("#")) return;
+/* ---------- CLICK PROTECTION ---------- */
+document.addEventListener("click", function (e) {
+  const link = e.target.closest("a");
+  if (!link || !link.href || !link.href.startsWith("http")) return;
 
-      const absoluteHref = (() => {
-        try {
-          return new URL(href, location.href).toString();
-        } catch {
-          return href;
-        }
-      })();
+  e.preventDefault();
 
-      if (!isHttpUrl(absoluteHref)) return;
+  safeSendMessage({ url: link.href }, (response) => {
+    if (!response || !response.verdict) {
+      window.location.href = link.href;
+      return;
+    }
 
-      const badge = ensureBadge(a);
-
-      try {
-        const result = await fetchVerdict(absoluteHref);
-        const v = normalizeVerdict(result.verdict);
-        badge.textContent = v.label;
-        badge.style.background = v.bg;
-      } catch {
-        badge.textContent = "ERROR";
-        badge.style.background = "#ef4444";
+    if (response.verdict === "SCAM") {
+      alert("🚨 Blocked: This link is a confirmed scam.");
+    } else if (response.verdict === "SUSPICIOUS") {
+      if (confirm("⚠️ Suspicious link detected. Open anyway?")) {
+        window.location.href = link.href;
       }
-    },
-    true
-  );
+    } else {
+      window.location.href = link.href;
+    }
+  });
+});
 
-  document.addEventListener(
-    "mouseout",
-    (e) => {
-      const a = e.target && e.target.closest ? e.target.closest("a") : null;
-      if (!a) return;
-
-      const related = e.relatedTarget;
-      if (related && a.contains(related)) return;
-      removeActiveBadge();
-    },
-    true
-  );
-})();
+/* ---------- CLEANUP ON PAGE UNLOAD ---------- */
+window.addEventListener("beforeunload", () => {
+  if (tooltip) tooltip.remove();
+});
