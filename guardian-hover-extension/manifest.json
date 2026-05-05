@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Guardian Hover Verdict",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Shows Guardian backend verdict (SAFE/SUS/NOT SAFE) when hovering links.",
   "permissions": [],
-  "host_permissions": [
-    "https://guardian-back.onrender.com/*"
-  ],
+  "host_permissions": ["https://guardian-back.onrender.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

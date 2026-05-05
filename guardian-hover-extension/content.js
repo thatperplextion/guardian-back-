@@ -1,11 +1,11 @@
-/***********************
- * Guardian Content Script
- * FINAL STABLE VERSION
- ***********************/
+// Guardian Hover Verdict (backend-driven)
+// - Content script only: detects hovered <a>
+// - Calls service worker via chrome.runtime.sendMessage
+// - Renders a small inline pill next to hovered link
 
-const guardianCache = new Map();
+const verdictCache = new Map();
+let activeHoverToken = 0;
 
-/* ---------- SAFE MESSAGE SENDER ---------- */
 function safeSendMessage(payload, callback) {
   try {
     if (
@@ -13,152 +13,101 @@ function safeSendMessage(payload, callback) {
       !chrome.runtime ||
       typeof chrome.runtime.sendMessage !== "function"
     ) {
+      callback?.({ verdict: "ERROR", reasons: ["No extension runtime"], riskScore: 0 });
       return;
     }
     chrome.runtime.sendMessage(payload, callback);
-  } catch (e) {
-    // Extension context invalidated (normal during reloads)
+  } catch {
+    callback?.({ verdict: "ERROR", reasons: ["sendMessage failed"], riskScore: 0 });
   }
 }
 
-/* ---------- TOOLTIP ---------- */
-let tooltip = null;
+function getOrCreatePill(linkEl) {
+  const existing = linkEl.querySelector(":scope > .guardian-pill");
+  if (existing) return existing;
 
-function showTooltip(text, color, x, y) {
-  if (!tooltip) {
-    tooltip = document.createElement("div");
-    tooltip.style.position = "fixed";
-    tooltip.style.padding = "6px 10px";
-    tooltip.style.borderRadius = "6px";
-    tooltip.style.fontSize = "12px";
-    tooltip.style.fontFamily = "Arial, sans-serif";
-    tooltip.style.color = "white";
-    tooltip.style.zIndex = "999999";
-    tooltip.style.pointerEvents = "none";
-    document.body.appendChild(tooltip);
-  }
-
-  tooltip.textContent = text;
-  tooltip.style.background = color;
-  tooltip.style.left = x + 10 + "px";
-  tooltip.style.top = y + 10 + "px";
-  tooltip.style.display = "block";
+  const pill = document.createElement("span");
+  pill.className = "guardian-pill";
+  pill.style.marginLeft = "8px";
+  pill.style.fontSize = "11px";
+  pill.style.padding = "2px 8px";
+  pill.style.borderRadius = "9999px";
+  pill.style.color = "white";
+  pill.style.fontWeight = "700";
+  pill.style.verticalAlign = "middle";
+  pill.style.whiteSpace = "nowrap";
+  linkEl.appendChild(pill);
+  return pill;
 }
 
-function hideTooltip() {
-  if (tooltip) tooltip.style.display = "none";
-}
-
-/* ---------- BADGES ---------- */
-function upsertBadge(link, verdict) {
-  const existing = link.querySelector(":scope > .guardian-badge");
-  const badge = existing || document.createElement("span");
-
-  badge.className = "guardian-badge";
-  badge.style.marginLeft = "6px";
-  badge.style.fontSize = "11px";
-  badge.style.padding = "2px 6px";
-  badge.style.borderRadius = "9999px";
-  badge.style.color = "white";
-  badge.style.fontWeight = "bold";
-  badge.style.verticalAlign = "middle";
-
-  if (verdict === "SCAM") {
-    badge.textContent = "NOT SAFE";
-    badge.style.background = "#b91c1c";
-  } else if (verdict === "SUSPICIOUS") {
-    badge.textContent = "SUS";
-    badge.style.background = "#ca8a04";
-  } else if (verdict === "SAFE") {
-    badge.textContent = "SAFE";
-    badge.style.background = "#15803d";
-  } else {
-    // ERROR or any unexpected response
-    badge.textContent = "ERR";
-    badge.style.background = "#6b7280";
-  }
-
-  if (!existing) {
-    link.appendChild(badge);
-  }
-}
-
-/* ---------- HOVER SCAN ---------- */
-document.addEventListener("mouseover", function (e) {
-  const link = e.target.closest("a");
-  if (!link || !link.href || !link.href.startsWith("http")) return;
-
-  const url = link.href;
-
-  if (guardianCache.has(url)) {
-    const verdict = guardianCache.get(url);
-    showTooltip(
-      verdict,
-      verdict === "SCAM"
-        ? "#b91c1c"
-        : verdict === "SUSPICIOUS"
-        ? "#ca8a04"
-        : "#15803d",
-      e.clientX,
-      e.clientY
-    );
-    upsertBadge(link, verdict);
+function setPill(pill, verdict) {
+  if (verdict === "..." || verdict === "PENDING") {
+    pill.textContent = "...";
+    pill.style.background = "#6b7280";
     return;
   }
+  if (verdict === "SCAM") {
+    pill.textContent = "NOT SAFE";
+    pill.style.background = "#b91c1c";
+  } else if (verdict === "SUSPICIOUS") {
+    pill.textContent = "SUS";
+    pill.style.background = "#ca8a04";
+  } else if (verdict === "SAFE") {
+    pill.textContent = "SAFE";
+    pill.style.background = "#15803d";
+  } else {
+    pill.textContent = "ERR";
+    pill.style.background = "#6b7280";
+  }
+}
 
-  safeSendMessage({ url }, (response) => {
-    if (!response || !response.verdict) return;
+function removePill(linkEl) {
+  const pill = linkEl.querySelector(":scope > .guardian-pill");
+  pill?.remove();
+}
 
-    // Don't cache ERROR responses; allow retry on next hover.
-    if (response.verdict === "SAFE" || response.verdict === "SUSPICIOUS" || response.verdict === "SCAM") {
-      guardianCache.set(url, response.verdict);
-    }
+document.addEventListener(
+  "mouseover",
+  (e) => {
+    const linkEl = e.target?.closest?.("a");
+    if (!linkEl) return;
 
-    upsertBadge(link, response.verdict);
+    const url = linkEl.href;
+    if (!url || typeof url !== "string" || !url.startsWith("http")) return;
 
-    showTooltip(
-      response.verdict,
-      response.verdict === "SCAM"
-        ? "#b91c1c"
-        : response.verdict === "SUSPICIOUS"
-        ? "#ca8a04"
-        : response.verdict === "SAFE"
-        ? "#15803d"
-        : "#6b7280",
-      e.clientX,
-      e.clientY
-    );
-  });
-});
+    const pill = getOrCreatePill(linkEl);
+    setPill(pill, "...");
 
-document.addEventListener("mouseout", hideTooltip);
-
-/* ---------- CLICK PROTECTION ---------- */
-document.addEventListener("click", function (e) {
-  const link = e.target.closest("a");
-  if (!link || !link.href || !link.href.startsWith("http")) return;
-
-  e.preventDefault();
-
-  safeSendMessage({ url: link.href }, (response) => {
-    if (!response || !response.verdict) {
-      window.location.href = link.href;
+    const cachedVerdict = verdictCache.get(url);
+    if (cachedVerdict) {
+      setPill(pill, cachedVerdict);
       return;
     }
 
-    if (response.verdict === "SCAM") {
-      alert("🚨 Blocked: This link is a confirmed scam.");
-    } else if (response.verdict === "SUSPICIOUS") {
-      if (confirm("⚠️ Suspicious link detected. Open anyway?")) {
-        window.location.href = link.href;
-      }
-    } else {
-      window.location.href = link.href;
-    }
-  });
-});
+    const hoverToken = ++activeHoverToken;
+    safeSendMessage({ url }, (resp) => {
+      if (hoverToken !== activeHoverToken) return;
+      if (!pill.isConnected) return;
 
-/* ---------- CLEANUP ON PAGE UNLOAD ---------- */
-window.addEventListener("beforeunload", () => {
-  if (tooltip) tooltip.remove();
-});
+      const verdict = resp?.verdict;
+      if (verdict === "SAFE" || verdict === "SUSPICIOUS" || verdict === "SCAM") {
+        verdictCache.set(url, verdict);
+      }
+
+      setPill(pill, verdict);
+    });
+  },
+  true
+);
+
+document.addEventListener(
+  "mouseout",
+  (e) => {
+    const linkEl = e.target?.closest?.("a");
+    if (!linkEl) return;
+    // Only remove when leaving the link (not moving between children)
+    if (linkEl.contains(e.relatedTarget)) return;
+    removePill(linkEl);
+  },
+  true
+);
