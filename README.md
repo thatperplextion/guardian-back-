@@ -67,4 +67,4 @@ demo.html                   Page for trying the hover verdicts
 
 ## Status
 
-Working prototype. Scoring is rule-based; `MLService` and `ContextService` are scaffolding for a model-backed verdict.
+Working prototype. The scan endpoint uses inline rule-based scoring. `MLService` (keyword heuristic) and `ContextService` (time-of-day) exist but are not yet wired into it.
