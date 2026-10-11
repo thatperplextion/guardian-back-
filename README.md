@@ -29,7 +29,7 @@ curl -X POST http://localhost:8080/api/scan/ \
 ```
 
 ```json
-{ "verdict": "SCAM", "riskScore": 150, "reasons": ["Rule-based detection triggered"] }
+{ "verdict": "SCAM", "riskScore": 130, "reasons": ["Rule-based detection triggered"] }
 ```
 
 ## Run the backend
